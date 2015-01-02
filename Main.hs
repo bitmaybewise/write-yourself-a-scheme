@@ -105,17 +105,16 @@ showVal (Bool False)           = "#f"
 showVal (List contents)        = "(" ++ unwordsList contents ++ ")"
 showVal (DottedList head tail) = "(" ++ unwordsList head ++ " . " ++ showVal tail ++ ")"
 
-primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
-primitives = [("+", numericBinop (+))
-             ,("-", numericBinop (-))
-             ,("*", numericBinop (*))
-             ,("/", numericBinop div)
-             ,("mod", numericBinop mod)
-             ,("quotient", numericBinop quot)
-             ,("remainder", numericBinop rem)]
+numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
+numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
+numericBinop op params = mapM unpackNum params >>= return . Number .foldl1 op
 
-apply :: String -> [LispVal] -> ThrowsError LispVal
-apply func args = maybe (throwError $ NotFunction "Unrecognized primitive function args" func) ($ args) (lookup func primitives)
+boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
+boolBinop unpacker op args = if length args /= 2
+                             then throwError $ NumArgs 2 args
+                             else do left  <- unpacker $ args !! 0
+                                     right <- unpacker $ args !! 1
+                                     return $ Bool $ left `op` right
 
 unpackNum :: LispVal -> ThrowsError Integer
 unpackNum (Number n) = return n
@@ -126,9 +125,43 @@ unpackNum (String n) = let parsed = reads n in
 unpackNum (List [n]) = unpackNum n
 unpackNum notNum     = throwError $ TypeMismatch "number" notNum
 
-numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
-numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
-numericBinop op params = mapM unpackNum params >>= return . Number .foldl1 op
+unpackStr :: LispVal -> ThrowsError String
+unpackStr (String s) = return s
+unpackStr (Number s) = return $ show s
+unpackStr (Bool s)   = return $ show s
+unpackStr notString  = throwError $ TypeMismatch "string" notString
+
+unpackBool :: LispVal -> ThrowsError Bool
+unpackBool (Bool b) = return b
+unpackBool notBool  = throwError $ TypeMismatch "boolean" notBool
+
+numBoolBinop  = boolBinop unpackNum
+strBoolBinop  = boolBinop unpackStr
+boolBoolBinop = boolBinop unpackBool
+
+primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
+primitives = [("+", numericBinop (+))
+             ,("-", numericBinop (-))
+             ,("*", numericBinop (*))
+             ,("/", numericBinop div)
+             ,("mod", numericBinop mod)
+             ,("quotient", numericBinop quot)
+             ,("remainder", numericBinop rem)
+             ,("=", numBoolBinop (==))
+             ,("<", numBoolBinop (<))
+             ,(">", numBoolBinop (>))
+             ,("/=", numBoolBinop (/=))
+             ,(">=", numBoolBinop (>=))
+             ,("<=", numBoolBinop (<=))
+             ,("&&", boolBoolBinop (||))
+             ,("||", boolBoolBinop (||))
+             ,("string=?", strBoolBinop (==))
+             ,("string?", strBoolBinop (>))
+             ,("string<=?", strBoolBinop (<=))
+             ,("string>=?", strBoolBinop (>=))]
+
+apply :: String -> [LispVal] -> ThrowsError LispVal
+apply func args = maybe (throwError $ NotFunction "Unrecognized primitive function args" func) ($ args) (lookup func primitives)
 
 eval :: LispVal -> ThrowsError LispVal
 eval val@(String _) = return val
