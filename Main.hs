@@ -1,3 +1,5 @@
+{-# LANGUAGE ExistentialQuantification #-}
+
 module Main where
 import System.Environment
 import Text.ParserCombinators.Parsec hiding (spaces)
@@ -40,6 +42,8 @@ instance Error LispError where
 type ThrowsError = Either LispError
 
 trapError action = catchError action (return . show)
+
+data Unpacker = forall a. Eq a => AnyUnpacker (LispVal -> ThrowsError a)
 
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
@@ -174,6 +178,22 @@ eqv [(List arg1), (List arg2)]     = return $ Bool $ (length arg1 == length arg2
 eqv [_, _]     = return $ Bool False
 eqv badArgList = throwError $ NumArgs 2 badArgList
 
+unpackEquals :: LispVal -> LispVal -> Unpacker -> ThrowsError Bool
+unpackEquals arg1 arg2 (AnyUnpacker unpacker) =
+    do unpacked1 <- unpacker arg1
+       unpacked2 <- unpacker arg2
+       return $ unpacked1 == unpacked2 
+   `catchError` (const $ return False)
+
+equal :: [LispVal] -> ThrowsError LispVal
+equal [arg1, arg2] = do
+    primitiveEquals <- liftM or $ mapM (unpackEquals arg1 arg2) [AnyUnpacker unpackNum, 
+                                                                 AnyUnpacker unpackStr,
+                                                                 AnyUnpacker unpackBool]
+    eqvEquals <- eqv [arg1, arg2]
+    return $ Bool $ (primitiveEquals || let (Bool x) = eqvEquals in x)
+equal badArgList   = throwError $ NumArgs 2 badArgList
+
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
 primitives = [("+", numericBinop (+))
              ,("-", numericBinop (-))
@@ -198,7 +218,8 @@ primitives = [("+", numericBinop (+))
              ,("cdr", cdr)
              ,("cons", cons)
              ,("eq?", eqv)
-             ,("eqv?", eqv)]
+             ,("eqv?", eqv)
+             ,("equal?", equal)]
 
 apply :: String -> [LispVal] -> ThrowsError LispVal
 apply func args = maybe (throwError $ NotFunction "Unrecognized primitive function args" func) ($ args) (lookup func primitives)
