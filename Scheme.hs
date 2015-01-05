@@ -1,6 +1,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 
-module Lisp where
+module Main where
+
 import System.Environment
 import Text.ParserCombinators.Parsec hiding (spaces)
 import Control.Monad
@@ -58,7 +59,7 @@ extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
 
 symbol :: Parser Char
-symbol = oneOf "!$%|*+-/:<=?>@^_~#"
+symbol = oneOf "!$%&|*+-/:<=?>@^_~#"
 
 spaces :: Parser ()
 spaces = skipMany1 space
@@ -225,7 +226,7 @@ primitives = [("+", numericBinop (+))
              ,("/=", numBoolBinop (/=))
              ,(">=", numBoolBinop (>=))
              ,("<=", numBoolBinop (<=))
-             ,("&&", boolBoolBinop (||))
+             ,("&&", boolBoolBinop (&&))
              ,("||", boolBoolBinop (||))
              ,("string=?", strBoolBinop (==))
              ,("string?", strBoolBinop (>))
@@ -290,7 +291,7 @@ eval env (List (function : args)) = do
 eval env badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 readOrThrow :: Parser a -> String -> ThrowsError a
-readOrThrow parser input = case parse parser "lisp" input of
+readOrThrow parser input = case parse parser "scheme" input of
     Left err  -> throwError $ Parser err
     Right val -> return val
 
@@ -323,7 +324,7 @@ runOne args = do
     >>= hPutStrLn stderr
 
 runRepl :: IO ()
-runRepl = primitiveBindings >>= until_ (== "quit") (readPrompt "Lisp> ") . evalAndPrint
+runRepl = primitiveBindings >>= until_ (== "quit") (readPrompt "scheme> ") . evalAndPrint
 
 type Env = IORef [(String, IORef LispVal)]
 
